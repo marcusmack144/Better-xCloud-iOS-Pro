@@ -1,0 +1,14 @@
+# Build Instructions for Better-xCloud-iOS-Pro
+
+## Prerequisites
+- macOS 13.0+
+- Xcode 15.0+
+- CocoaPods: `sudo gem install cocoapods`
+
+## Automated Build (GitHub Actions)
+Simply push to `main` or `Root` branch - workflow runs automatically!
+
+## Manual Local Build
+```bash
+chmod +x scripts/build-ipa.sh
+./scripts/build-ipa.sh
