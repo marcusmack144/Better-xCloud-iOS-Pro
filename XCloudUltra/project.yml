@@ -17,7 +17,7 @@ targets:
       - path: Resources
     settings:
       PRODUCT_NAME: XCloudUltra
-      BUNDLE_IDENTIFIER: poshgator.better-xcloud
+      PRODUCT_BUNDLE_IDENTIFIER: poshgator.better-xcloud
       DEVELOPMENT_TEAM: ""
       CODE_SIGN_IDENTITY: ""
       CODE_SIGNING_REQUIRED: "NO"
