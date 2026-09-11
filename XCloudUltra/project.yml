@@ -19,17 +19,14 @@ targets:
       PRODUCT_NAME: XCloudUltra
       PRODUCT_BUNDLE_IDENTIFIER: poshgator.better-xcloud
       INFOPLIST_FILE: Info.plist
-      DEVELOPMENT_TEAM: ""
-      CODE_SIGN_IDENTITY: ""
+      CODE_SIGN_IDENTITY: "-"
       CODE_SIGNING_REQUIRED: "NO"
       CODE_SIGNING_ALLOWED: "NO"
-      CODE_SIGN_STYLE: Automatic
+      CODE_SIGN_STYLE: Manual
       MARKETING_VERSION: "1.0"
       CURRENT_PROJECT_VERSION: "1"
       ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
       IPHONEOS_DEPLOYMENT_TARGET: "16.0"
-      SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
-      VALID_ARCHS: "arm64 arm64e"
 
 schemes:
   XCloudUltra:
