@@ -14,7 +14,6 @@ on:
 env:
   XCODE_VERSION: '15.4'
   DEPLOYMENT_TARGET: '16.0'
-  PROJECT_DIR: 'XCloudUltra'
 
 jobs:
   build:
@@ -52,7 +51,7 @@ jobs:
 
       - name: Verify Better xCloud
         run: |
-          SCRIPT="${PROJECT_DIR}/Resources/better-xcloud.user.js"
+          SCRIPT="XCloudUltra/Resources/better-xcloud.user.js"
           if [ ! -f "$SCRIPT" ]; then
             echo "❌ Better xCloud script not found"
             exit 1
@@ -67,7 +66,7 @@ jobs:
 
       - name: Generate Xcode project
         run: |
-          cd ${PROJECT_DIR}
+          cd XCloudUltra
           xcodegen generate
           cd ..
 
@@ -83,7 +82,7 @@ jobs:
           rm -rf "${DERIVED_DATA}"
           
           xcodebuild \
-            -project "${PROJECT_DIR}/project.xcodeproj" \
+            -project "XCloudUltra/project.xcodeproj" \
             -scheme "XCloudUltra" \
             -configuration "${CONFIGURATION}" \
             -derivedDataPath "${DERIVED_DATA}" \
@@ -149,36 +148,11 @@ jobs:
           
           echo "Validating IPA structure..."
           
-          # Check Payload exists
-          unzip -l "${IPA_PATH}" | grep -q "Payload/" || {
-            echo "❌ Payload directory not found"
-            exit 1
-          }
+          unzip -l "${IPA_PATH}" | grep -q "Payload/" || { echo "❌ Payload not found"; exit 1; }
+          unzip -l "${IPA_PATH}" | grep -q "Payload/${PROJECT_NAME}.app/" || { echo "❌ .app not found"; exit 1; }
+          unzip -l "${IPA_PATH}" | grep -q "Info.plist" || { echo "❌ Info.plist not found"; exit 1; }
+          unzip -l "${IPA_PATH}" | grep -q "Payload/${PROJECT_NAME}.app/${PROJECT_NAME}" || { echo "❌ Executable not found"; exit 1; }
           
-          # Check .app exists
-          unzip -l "${IPA_PATH}" | grep -q "Payload/${PROJECT_NAME}.app/" || {
-            echo "❌ ${PROJECT_NAME}.app not found in Payload"
-            exit 1
-          }
-          
-          # Check Info.plist exists
-          unzip -l "${IPA_PATH}" | grep -q "Payload/${PROJECT_NAME}.app/Info.plist" || {
-            echo "❌ Info.plist not found"
-            exit 1
-          }
-          
-          # Check executable exists
-          unzip -l "${IPA_PATH}" | grep -q "Payload/${PROJECT_NAME}.app/${PROJECT_NAME}" || {
-            echo "❌ Executable not found"
-            exit 1
-          }
-          
-          # Verify no test/debug files
-          if unzip -l "${IPA_PATH}" | grep -q "\.dSYM\|xctest\|XCTest"; then
-            echo "⚠️ Warning: Found debug artifacts"
-          fi
-          
-          # Verify no .DS_Store
           if unzip -l "${IPA_PATH}" | grep -q "\.DS_Store"; then
             echo "❌ Found .DS_Store files"
             exit 1
@@ -189,24 +163,19 @@ jobs:
       - name: Generate checksums
         run: |
           BUILD_DIR="build"
-          IPA_PATH="${BUILD_DIR}/xcloud-ultra-unsigned.ipa"
-          
           cd "${BUILD_DIR}"
           shasum -a 256 xcloud-ultra-unsigned.ipa > xcloud-ultra-unsigned.ipa.sha256
           cd ..
-          
-          echo "SHA256:"
           cat "${BUILD_DIR}/xcloud-ultra-unsigned.ipa.sha256"
 
-      - name: Upload IPA artifact
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: xcloud-ultra-unsigned-ipa
           path: build/xcloud-ultra-unsigned.ipa
           retention-days: 30
-          if-no-files-found: error
 
-      - name: Upload checksum artifact
+      - name: Upload checksum
         uses: actions/upload-artifact@v4
         with:
           name: xcloud-ultra-checksums
@@ -220,31 +189,3 @@ jobs:
           name: build-log
           path: build.log
           retention-days: 7
-
-      - name: Summary
-        if: success()
-        run: |
-          BUILD_DIR="build"
-          IPA_PATH="${BUILD_DIR}/xcloud-ultra-unsigned.ipa"
-          
-          echo "✅ Build Complete"
-          echo ""
-          echo "Artifact: xcloud-ultra-unsigned.ipa"
-          echo "Size: $(du -h ${IPA_PATH} | cut -f1)"
-          echo ""
-          echo "Next steps:"
-          echo "1. Download the IPA from Actions artifacts"
-          echo "2. Sign using your preferred signing service (AltStore, Sideloadly, etc.)"
-          echo "3. Install on your iOS device"
-
-      - name: Failure summary
-        if: failure()
-        run: |
-          echo "❌ Build failed"
-          echo ""
-          echo "Check logs above for details"
-          echo ""
-          if [ -f build.log ]; then
-            echo "Last 50 lines of build log:"
-            tail -50 build.log
-          fi
