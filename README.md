@@ -263,3 +263,27 @@ Pull requests welcome. Keep changes focused:
 Built with Swift, WebKit, and Better xCloud.
 
 Optimized by removing unnecessary work, not adding layers.
+
+
+## Build, sign, and install
+
+The GitHub Actions workflow produces `build/xcloud-ultra-unsigned.ipa` as an artifact. An unsigned IPA cannot be installed directly on an iPhone; install it through AltStore/Sideloadly, or sign it locally with an Apple certificate and matching provisioning profile.
+
+For a local macOS build:
+
+```bash
+chmod +x scripts/build-ipa.sh scripts/sign-ipa.sh
+./scripts/build-ipa.sh
+```
+
+To sign the generated IPA, use the identity and provisioning profile from your Apple Developer account:
+
+```bash
+./scripts/sign-ipa.sh \
+  build/xcloud-ultra-unsigned.ipa \
+  build/xcloud-ultra-signed.ipa \
+  "Apple Distribution: Your Name (TEAMID)" \
+  ~/Library/MobileDevice/Provisioning\ Profiles/XCloud.mobileprovision
+```
+
+The bundle identifier is `poshgator.better-xcloud`; the provisioning profile must match it. You can then install the signed IPA with Apple Configurator, Xcode Devices and Simulators, or your preferred sideloading tool.
