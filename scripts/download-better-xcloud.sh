@@ -6,7 +6,7 @@ COMMIT="f8397043f6d2148d2345d508902a38c69cf1ee20"
 VERSION="6.7.12"
 GITHUB_RAW="https://raw.githubusercontent.com/redphx/better-xcloud/${COMMIT}/dist/better-xcloud.user.js"
 
-RESOURCES_DIR="${PROJECT_DIR}/XCloudUltra/Resources"
+RESOURCES_DIR="XCloudUltra/Resources"
 SCRIPT_FILE="${RESOURCES_DIR}/better-xcloud.user.js"
 
 mkdir -p "${RESOURCES_DIR}"
