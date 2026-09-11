@@ -1,139 +1,250 @@
-name: Build IPA
+name: Build Unsigned IPA
 
 on:
   push:
     branches:
-      - main
       - Root
+      - main
   pull_request:
     branches:
-      - main
       - Root
+      - main
   workflow_dispatch:
 
 env:
-  XCODE_VERSION: '15.0'
-  DEPLOYMENT_TARGET: '14.0'
-  MIN_OS_VERSION: '14.0'
+  XCODE_VERSION: '15.4'
+  DEPLOYMENT_TARGET: '16.0'
+  PROJECT_DIR: 'XCloudUltra'
 
 jobs:
   build:
-    runs-on: macos-14
-    timeout-minutes: 60
+    runs-on: macos-15
+    timeout-minutes: 90
     
     permissions:
       contents: read
-      
+      actions: read
+
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Set up Xcode
-        run: sudo xcode-select --switch /Applications/Xcode_15.0.app/Contents/Developer
-
-      - name: Check Xcode version
-        run: xcodebuild -version
-
-      - name: Cache CocoaPods dependencies
-        uses: actions/cache@v3
-        with:
-          path: Pods
-          key: ${{ runner.os }}-pods-${{ hashFiles('**/Podfile.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-pods-
-
-      - name: Install CocoaPods
         run: |
-          gem install cocoapods
-          pod repo update
+          sudo xcode-select --switch /Applications/Xcode_15.4.app/Contents/Developer || \
+          sudo xcode-select --switch /Applications/Xcode_15.3.app/Contents/Developer || \
+          sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: |
+          if ! command -v xcodegen &> /dev/null; then
+            brew install xcodegen
+          fi
+          xcodegen --version
+
+      - name: Download Better xCloud
+        run: |
+          chmod +x scripts/download-better-xcloud.sh
+          bash scripts/download-better-xcloud.sh
+
+      - name: Verify Better xCloud
+        run: |
+          SCRIPT="${PROJECT_DIR}/Resources/better-xcloud.user.js"
+          if [ ! -f "$SCRIPT" ]; then
+            echo "❌ Better xCloud script not found"
+            exit 1
+          fi
           
-      - name: Install dependencies
-        run: pod install --repo-update
-
-      - name: Configure provisioning
-        run: |
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          if [ -n "${{ secrets.PROVISIONING_PROFILE }}" ]; then
-            echo "${{ secrets.PROVISIONING_PROFILE }}" | base64 -d > ~/Library/MobileDevice/Provisioning\ Profiles/profile.mobileprovision
+          VERSION=$(grep "@version" "$SCRIPT" | head -1 | grep -o "[0-9]\+\.[0-9]\+\.[0-9]\+" || echo "unknown")
+          echo "✓ Better xCloud version: $VERSION"
+          
+          if ! grep -q "6.7.12" "$SCRIPT"; then
+            echo "⚠️ Warning: Expected Better xCloud 6.7.12"
           fi
 
-      - name: Import signing certificate
-        uses: apple-actions/import-codesign-certs@v1
-        with:
-          p12-file-base64: ${{ secrets.CERTIFICATE_P12_BASE64 }}
-          p12-password: ${{ secrets.CERTIFICATE_PASSWORD }}
-        if: secrets.CERTIFICATE_P12_BASE64 != ''
-
-      - name: Build app for release
+      - name: Generate Xcode project
         run: |
-          xcodebuild \
-            -workspace Better-xCloud-iOS-Pro.xcworkspace \
-            -scheme "Better-xCloud-iOS-Pro" \
-            -configuration Release \
-            -derivedDataPath build/derived \
-            -sdk iphoneos \
-            -arch arm64 \
-            CODE_SIGN_IDENTITY="${{ secrets.CODE_SIGN_IDENTITY }}" \
-            PROVISIONING_PROFILE_SPECIFIER="${{ secrets.PROVISIONING_PROFILE_SPECIFIER }}" \
-            DEVELOPMENT_TEAM="${{ secrets.DEVELOPMENT_TEAM }}" \
-            -verbose
-        if: secrets.CERTIFICATE_P12_BASE64 != ''
+          cd ${PROJECT_DIR}
+          xcodegen generate
+          cd ..
 
-      - name: Build unsigned app (fallback for testing)
+      - name: Build unsigned IPA
         run: |
+          BUILD_DIR="build"
+          DERIVED_DATA="${BUILD_DIR}/derived"
+          CONFIGURATION="Release"
+          SDK="iphoneos"
+          ARCH="arm64"
+          
+          mkdir -p "${BUILD_DIR}"
+          rm -rf "${DERIVED_DATA}"
+          
           xcodebuild \
-            -workspace Better-xCloud-iOS-Pro.xcworkspace \
-            -scheme "Better-xCloud-iOS-Pro" \
-            -configuration Release \
-            -derivedDataPath build/derived \
-            -sdk iphoneos \
-            -arch arm64 \
+            -project "${PROJECT_DIR}/project.xcodeproj" \
+            -scheme "XCloudUltra" \
+            -configuration "${CONFIGURATION}" \
+            -derivedDataPath "${DERIVED_DATA}" \
+            -sdk "${SDK}" \
+            -arch "${ARCH}" \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
-            -verbose
-        if: secrets.CERTIFICATE_P12_BASE64 == ''
+            IPHONEOS_DEPLOYMENT_TARGET="${DEPLOYMENT_TARGET}" \
+            -verbose 2>&1 | tee build.log
 
-      - name: Create IPA payload structure
+      - name: Create IPA structure
         run: |
-          mkdir -p build/Payload
-          cp -r build/derived/Build/Products/Release-iphoneos/*.app build/Payload/
-          cd build && zip -r -q Better-xCloud-iOS-Pro.ipa Payload && cd ..
-        if: success()
+          BUILD_DIR="build"
+          DERIVED_DATA="${BUILD_DIR}/derived"
+          CONFIGURATION="Release"
+          PROJECT_NAME="XCloudUltra"
+          
+          APP_PATH="${DERIVED_DATA}/Build/Products/${CONFIGURATION}-iphoneos/${PROJECT_NAME}.app"
+          
+          if [ ! -d "${APP_PATH}" ]; then
+            echo "❌ App not found at ${APP_PATH}"
+            echo "Available products:"
+            find "${DERIVED_DATA}/Build/Products" -type d -name "*.app" || echo "No .app found"
+            exit 1
+          fi
+          
+          IPA_PAYLOAD="${BUILD_DIR}/Payload"
+          rm -rf "${IPA_PAYLOAD}"
+          mkdir -p "${IPA_PAYLOAD}"
+          
+          cp -r "${APP_PATH}" "${IPA_PAYLOAD}/"
+          
+          # Clean up unnecessary files
+          find "${IPA_PAYLOAD}" -name "*.swiftmodule" -type d -exec rm -rf {} + 2>/dev/null || true
+          find "${IPA_PAYLOAD}" -name "*.modulemap" -delete 2>/dev/null || true
+          find "${IPA_PAYLOAD}" -name ".DS_Store" -delete 2>/dev/null || true
+          find "${IPA_PAYLOAD}" -name "*.dSYM" -type d -exec rm -rf {} + 2>/dev/null || true
 
-      - name: Upload IPA to artifacts
-        uses: actions/upload-artifact@v3
+      - name: Package IPA
+        run: |
+          BUILD_DIR="build"
+          IPA_NAME="xcloud-ultra-unsigned.ipa"
+          
+          cd "${BUILD_DIR}"
+          zip -r -q "${IPA_NAME}" Payload/
+          cd ..
+          
+          IPA_PATH="${BUILD_DIR}/${IPA_NAME}"
+          
+          if [ ! -f "${IPA_PATH}" ]; then
+            echo "❌ IPA not created"
+            exit 1
+          fi
+          
+          IPA_SIZE=$(du -h "${IPA_PATH}" | cut -f1)
+          echo "✓ IPA created: ${IPA_PATH} (${IPA_SIZE})"
+
+      - name: Validate IPA
+        run: |
+          BUILD_DIR="build"
+          IPA_PATH="${BUILD_DIR}/xcloud-ultra-unsigned.ipa"
+          PROJECT_NAME="XCloudUltra"
+          
+          echo "Validating IPA structure..."
+          
+          # Check Payload exists
+          unzip -l "${IPA_PATH}" | grep -q "Payload/" || {
+            echo "❌ Payload directory not found"
+            exit 1
+          }
+          
+          # Check .app exists
+          unzip -l "${IPA_PATH}" | grep -q "Payload/${PROJECT_NAME}.app/" || {
+            echo "❌ ${PROJECT_NAME}.app not found in Payload"
+            exit 1
+          }
+          
+          # Check Info.plist exists
+          unzip -l "${IPA_PATH}" | grep -q "Payload/${PROJECT_NAME}.app/Info.plist" || {
+            echo "❌ Info.plist not found"
+            exit 1
+          }
+          
+          # Check executable exists
+          unzip -l "${IPA_PATH}" | grep -q "Payload/${PROJECT_NAME}.app/${PROJECT_NAME}" || {
+            echo "❌ Executable not found"
+            exit 1
+          }
+          
+          # Verify no test/debug files
+          if unzip -l "${IPA_PATH}" | grep -q "\.dSYM\|xctest\|XCTest"; then
+            echo "⚠️ Warning: Found debug artifacts"
+          fi
+          
+          # Verify no .DS_Store
+          if unzip -l "${IPA_PATH}" | grep -q "\.DS_Store"; then
+            echo "❌ Found .DS_Store files"
+            exit 1
+          fi
+          
+          echo "✓ IPA validation passed"
+
+      - name: Generate checksums
+        run: |
+          BUILD_DIR="build"
+          IPA_PATH="${BUILD_DIR}/xcloud-ultra-unsigned.ipa"
+          
+          cd "${BUILD_DIR}"
+          shasum -a 256 xcloud-ultra-unsigned.ipa > xcloud-ultra-unsigned.ipa.sha256
+          cd ..
+          
+          echo "SHA256:"
+          cat "${BUILD_DIR}/xcloud-ultra-unsigned.ipa.sha256"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: Better-xCloud-iOS-Pro
-          path: build/Better-xCloud-iOS-Pro.ipa
-          if-no-files-found: warn
+          name: xcloud-ultra-unsigned-ipa
+          path: build/xcloud-ultra-unsigned.ipa
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Upload checksum artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcloud-ultra-checksums
+          path: build/xcloud-ultra-unsigned.ipa.sha256
           retention-days: 30
 
-      - name: Generate release notes
-        id: release-notes
-        run: |
-          echo "BUILD_DATE=$(date +'%Y-%m-%d %H:%M:%S')" >> $GITHUB_OUTPUT
-          echo "GIT_HASH=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          files: build/Better-xCloud-iOS-Pro.ipa
-          body: |
-            Built on: ${{ steps.release-notes.outputs.BUILD_DATE }}
-            Commit: ${{ steps.release-notes.outputs.GIT_HASH }}
-            
-            ### Features:
-            - USB-C controller support
-            - 5G optimization
-            - Embedded Better xCloud userscript
-          draft: false
-          prerelease: false
+          name: build-log
+          path: build.log
+          retention-days: 7
 
-      - name: Notify on failure
+      - name: Summary
+        if: success()
+        run: |
+          BUILD_DIR="build"
+          IPA_PATH="${BUILD_DIR}/xcloud-ultra-unsigned.ipa"
+          
+          echo "✅ Build Complete"
+          echo ""
+          echo "Artifact: xcloud-ultra-unsigned.ipa"
+          echo "Size: $(du -h ${IPA_PATH} | cut -f1)"
+          echo ""
+          echo "Next steps:"
+          echo "1. Download the IPA from Actions artifacts"
+          echo "2. Sign using your preferred signing service (AltStore, Sideloadly, etc.)"
+          echo "3. Install on your iOS device"
+
+      - name: Failure summary
         if: failure()
         run: |
-          echo "Build failed. Check logs above for details."
-          exit 1
+          echo "❌ Build failed"
+          echo ""
+          echo "Check logs above for details"
+          echo ""
+          if [ -f build.log ]; then
+            echo "Last 50 lines of build log:"
+            tail -50 build.log
+          fi
