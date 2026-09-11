@@ -30,9 +30,7 @@ plutil -extract Entitlements xml1 -o "$ENTITLEMENTS" "$PROFILE_PLIST"
 cp "$PROFILE" "$APP_PATH/embedded.mobileprovision"
 
 echo "Signing nested code..."
-find "$APP_PATH" -type f \(
-    -name "*.dylib" -o -name "*.framework" -o -name "*.appex"
-\) -print0 | sort -rz | while IFS= read -r -d "" item; do
+find "$APP_PATH" ( -name "*.framework" -o -name "*.appex" -o -name "*.dylib" ) -print0 | while IFS= read -r -d "" item; do
     codesign --force --sign "$SIGNING_IDENTITY" --timestamp=none "$item"
 done
 
@@ -40,8 +38,10 @@ echo "Signing app bundle..."
 codesign --force --sign "$SIGNING_IDENTITY" --entitlements "$ENTITLEMENTS" --timestamp=none "$APP_PATH"
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 
-rm -f "$OUTPUT_IPA"
-( cd "$TMP_DIR" && zip -qry "$OLDPWD/$OUTPUT_IPA" Payload )
-shasum -a 256 "$OUTPUT_IPA" > "$OUTPUT_IPA.sha256"
-echo "✓ Signed IPA: $OUTPUT_IPA"
-echo "✓ SHA256: $(cat "$OUTPUT_IPA.sha256")"
+OUTPUT_DIR=$(cd "$(dirname "$OUTPUT_IPA")" && pwd)
+OUTPUT_PATH="$OUTPUT_DIR/$(basename "$OUTPUT_IPA")"
+rm -f "$OUTPUT_PATH"
+( cd "$TMP_DIR" && zip -qry "$OUTPUT_PATH" Payload )
+shasum -a 256 "$OUTPUT_PATH" > "$OUTPUT_PATH.sha256"
+echo "✓ Signed IPA: $OUTPUT_PATH"
+echo "✓ SHA256: $(cat "$OUTPUT_PATH.sha256")"
